@@ -15,7 +15,7 @@
 |------|-----------|----------------|
 | 1 | [mini-embedding](https://github.com/JeffreyRed/mini-embedding) | Word vectors — Skip-gram Word2Vec |
 | 2 | [mini-self-attention](https://github.com/JeffreyRed/mini-self-attention) | Multi-head self-attention encoder block |
-| 3 | [mini-transformer]((https://github.com/JeffreyRed/mini-transformer) | Positional encoding + stacked causal decoder |
+| 3 | [mini-transformer](https://github.com/JeffreyRed/mini-transformer) | Positional encoding + stacked causal decoder |
 | 4 | [mini-gpt](https://github.com/JeffreyRed/mini-gpt) | Real corpus, overfitting, beam search, evaluation |
 | **5** | **mini-chat** ← you are here | Instruction format, loss masking, chat interface |
 | 6 | [mini-cross-attention](https://github.com/JeffreyRed/mini-cross-attention) | Cross-attention module, source↔target alignment |
