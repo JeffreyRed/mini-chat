@@ -96,17 +96,22 @@ def train(
     train_dataset  : ChatDataset,
     val_dataset    : ChatDataset,
     pad_idx        : int,
-    epochs         : int   = 300,
-    lr             : float = 3e-3,
+    epochs         : int   = 150,
+    lr             : float = 1e-3,
     min_lr         : float = 1e-5,
     batch_size     : int   = 8,
-    warmup_steps   : int   = 100,
+    warmup_steps   : int   = 50,
+    patience       : int   = 20,
     verbose        : bool  = True,
     snapshots      : list  = None,
     snapshot_every : int   = 10,
 ) -> Tuple[list, list, MiniChat]:
     """
-    Trains MiniChat using masked cross-entropy.
+    Trains MiniChat using masked cross-entropy with early stopping.
+
+    Early stopping halts training when val perplexity has not improved
+    for `patience` consecutive epochs. This prevents the extreme
+    overfitting seen when training beyond the point of best generalisation.
 
     Returns:
         train_history : list of (loss, perplexity) per epoch
@@ -122,12 +127,13 @@ def train(
         betas=(0.9, 0.95), weight_decay=0.1,
     )
 
-    total_steps  = epochs * len(loader)
-    step         = 0
-    best_val_ppl = float("inf")
-    best_model   = None
-    train_hist   = []
-    val_hist     = []
+    total_steps      = epochs * len(loader)
+    step             = 0
+    best_val_ppl     = float("inf")
+    best_model       = None
+    epochs_no_improve = 0
+    train_hist       = []
+    val_hist         = []
 
     for epoch in range(1, epochs + 1):
         model.train()
@@ -153,9 +159,13 @@ def train(
         v_loss, v_ppl = evaluate(model, val_dataset, pad_idx, batch_size)
         val_hist.append((v_loss, v_ppl))
 
+        # Best checkpoint + early stopping counter
         if v_ppl < best_val_ppl:
-            best_val_ppl = v_ppl
-            best_model   = copy.deepcopy(model)
+            best_val_ppl      = v_ppl
+            best_model        = copy.deepcopy(model)
+            epochs_no_improve = 0
+        else:
+            epochs_no_improve += 1
 
         if snapshots is not None and (epoch % snapshot_every == 0 or epoch == 1):
             model.eval()
@@ -164,14 +174,21 @@ def train(
                 _, all_w   = model(src0[:1])
                 snapshots.append((epoch, [w.detach().clone() for w in all_w]))
 
-        if verbose and (epoch % 10 == 0 or epoch == 1):
+        if verbose and (epoch % 5 == 0 or epoch == 1):
             gap     = v_ppl - t_ppl
-            warning = "  ⚠ overfit" if gap > 5 and epoch > 30 else ""
+            warning = "  ⚠ overfit" if gap > 5 and epoch > 20 else ""
+            stop_in = f"  (early stop in {patience - epochs_no_improve})" if epochs_no_improve > 0 else ""
             print(
                 f"Epoch [{epoch:>3}/{epochs}]  "
                 f"train_ppl={t_ppl:>7.2f}  "
                 f"val_ppl={v_ppl:>7.2f}"
-                f"{warning}"
+                f"{warning}{stop_in}"
             )
+
+        # Early stopping
+        if epochs_no_improve >= patience:
+            print(f"\n  Early stopping at epoch {epoch} (val_ppl did not improve for {patience} epochs).")
+            print(f"  Best val_ppl = {best_val_ppl:.2f}")
+            break
 
     return train_hist, val_hist, best_model

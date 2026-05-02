@@ -27,20 +27,27 @@ from src.utils      import demo_responses, interactive_chat, show_loss_masking
 from src.visualize  import plot_loss_mask, plot_training, plot_attention
 
 # ── Config ────────────────────────────────────────────────────────────────────
-CORPUS_PATH    = "data/science_qa.txt"
-VAL_SPLIT      = 0.15
-EMB_DIM        = 64
-N_HEADS        = 4
-N_LAYERS       = 4
-FF_DIM         = 128
-MAX_LEN        = 128
-EPOCHS         = 300
-LR             = 3e-3
-MIN_LR         = 1e-5
-BATCH_SIZE     = 8
-WARMUP_STEPS   = 100
-OUTPUTS_DIR    = Path("outputs")
-INSPECT_Q      = "What is imagination"   # question for attention heatmap
+CORPUS_PATH      = "data/science_qa.txt"
+VAL_SPLIT        = 0.15
+EMB_DIM          = 64
+N_HEADS          = 4
+N_LAYERS         = 2       # reduced from 4 — dataset too small for 4 layers
+FF_DIM           = 128
+MAX_LEN          = 128
+EPOCHS           = 150     # early stopping will trigger well before this
+LR               = 5e-4   # lower LR for fine-tuning (base model already trained)
+MIN_LR           = 1e-6
+BATCH_SIZE       = 8
+WARMUP_STEPS     = 50
+PATIENCE         = 20      # early stopping: halt if val_ppl doesn't improve for 20 epochs
+DROPOUT          = 0.3     # higher dropout to slow memorisation (was 0.1)
+OUTPUTS_DIR      = Path("outputs")
+INSPECT_Q        = "What is imagination"
+
+# Path to mini-gpt checkpoint — set to None to train from scratch
+# Using pretrained weights means the model already knows language structure
+# and only needs to learn the conversation format.
+MINIGPT_CKPT     = "../mini-gpt/outputs/minigpt_best.pt"
 # ──────────────────────────────────────────────────────────────────────────────
 
 
@@ -81,15 +88,39 @@ def main() -> None:
 
     # ── 4. Model ──────────────────────────────────────────────────────────────
     print("── Model ───────────────────────────────────────────")
-    model = MiniChat(
-        vocab_size = tok.vocab_size,
-        emb_dim    = EMB_DIM,
-        n_heads    = N_HEADS,
-        n_layers   = N_LAYERS,
-        max_len    = MAX_LEN,
-        ff_dim     = FF_DIM,
-        pad_idx    = tok.pad_idx,
-    )
+    from pathlib import Path as _Path
+    ckpt_exists = MINIGPT_CKPT and _Path(MINIGPT_CKPT).exists()
+
+    if ckpt_exists:
+        print(f"  Loading pretrained weights from {MINIGPT_CKPT}")
+        print("  (base model already knows language — only learning conversation format)\n")
+        model = MiniChat.from_pretrained(
+            MINIGPT_CKPT,
+            new_vocab_size = tok.vocab_size,
+            emb_dim        = EMB_DIM,
+            n_heads        = N_HEADS,
+            n_layers       = N_LAYERS,
+            max_len        = MAX_LEN,
+            ff_dim         = FF_DIM,
+            dropout        = DROPOUT,
+            pad_idx        = tok.pad_idx,
+        )
+    else:
+        if MINIGPT_CKPT:
+            print(f"  ⚠  mini-gpt checkpoint not found at: {MINIGPT_CKPT}")
+            print("     Training from scratch. For better results run mini-gpt first.\n")
+        else:
+            print("  Training from scratch (MINIGPT_CKPT = None)\n")
+        model = MiniChat(
+            vocab_size = tok.vocab_size,
+            emb_dim    = EMB_DIM,
+            n_heads    = N_HEADS,
+            n_layers   = N_LAYERS,
+            max_len    = MAX_LEN,
+            ff_dim     = FF_DIM,
+            dropout    = DROPOUT,
+            pad_idx    = tok.pad_idx,
+        )
     print(model, "\n")
 
     # ── 5. Train ──────────────────────────────────────────────────────────────
@@ -106,6 +137,7 @@ def main() -> None:
         min_lr         = MIN_LR,
         batch_size     = BATCH_SIZE,
         warmup_steps   = WARMUP_STEPS,
+        patience       = PATIENCE,
         snapshots      = snapshots,
         snapshot_every = max(1, EPOCHS // 30),
     )

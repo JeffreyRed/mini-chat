@@ -105,6 +105,63 @@ class MiniChat(nn.Module):
             elif isinstance(m, nn.Embedding):
                 nn.init.normal_(m.weight, 0.0, 0.02)
 
+    @classmethod
+    def from_pretrained(cls, checkpoint_path: str, new_vocab_size: int, **kwargs):
+        """
+        Loads weights from a mini-gpt checkpoint and extends the embedding
+        matrix to accommodate new vocab tokens ([HUMAN], [AI]).
+
+        The base model already knows language from mini-gpt training.
+        New token embeddings are initialised randomly and learned during
+        fine-tuning. All other weights are warm-started.
+
+        Args:
+            checkpoint_path: path to mini-gpt's minigpt_best.pt
+            new_vocab_size:   vocabulary size of the chat tokenizer
+                              (mini-gpt vocab + [HUMAN] + [AI] tokens)
+            **kwargs:         emb_dim, n_heads, n_layers, max_len, ff_dim,
+                              dropout, pad_idx — must match mini-gpt config
+
+        Returns:
+            MiniChat instance with pretrained weights loaded
+        """
+        import torch
+        ckpt       = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+        base_cfg   = ckpt["config"]
+        base_state = ckpt["model_state"]
+
+        # Build a new MiniChat with the chat vocab size
+        model = cls(vocab_size=new_vocab_size, **kwargs)
+
+        base_vocab = base_cfg["vocab_size"]   # smaller (mini-gpt vocab)
+        chat_vocab = new_vocab_size           # larger  (+ [HUMAN] [AI] + new words)
+
+        # Load all weights that match in shape
+        model_state = model.state_dict()
+        loaded, skipped = [], []
+
+        for name, param in base_state.items():
+            if name not in model_state:
+                skipped.append(name)
+                continue
+            target = model_state[name]
+            if param.shape == target.shape:
+                model_state[name] = param
+                loaded.append(name)
+            elif name in ("tok_emb.weight", "head.weight"):
+                # Embedding/head size differs because vocab grew.
+                # Copy the base vocab rows; new token rows stay random.
+                rows = min(param.shape[0], target.shape[0])
+                model_state[name][:rows] = param[:rows]
+                loaded.append(f"{name} (partial: {rows}/{target.shape[0]} rows)")
+            else:
+                skipped.append(f"{name} (shape mismatch)")
+
+        model.load_state_dict(model_state)
+        print(f"  Loaded  : {len(loaded)} tensors from {checkpoint_path}")
+        print(f"  Skipped : {skipped if skipped else 'none'}")
+        return model
+
     def _causal_mask(self, T, device):
         return torch.triu(
             torch.ones(T, T, dtype=torch.bool, device=device), diagonal=1
