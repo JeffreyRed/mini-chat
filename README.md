@@ -77,9 +77,13 @@ The model sees the full context but only updates weights to predict the AI respo
 - Blue = prompt tokens (no gradient)
 - Orange = AI response tokens (gradient flows)
 
+![loss_mask](outputs/loss_mask.png)
+
 ### Training curves
 `outputs/training_curves.png` shows train and val perplexity computed
 **only on AI response tokens** — a more honest metric than full-sequence perplexity.
+
+![training_curves](outputs/training_curves.png)
 
 ### Chat responses
 After training the model responds to science and AI questions:
