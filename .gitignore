@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+
+# Environments
+.venv/
+venv/
+env/
+
+# Outputs
+#outputs/*.pt
+#outputs/*.png
+#outputs/*.gif
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# macOS / IDEs
+.DS_Store
+.vscode/
+.idea/
